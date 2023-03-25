@@ -10,10 +10,16 @@ from collections import deque
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
+import math
 
 from utils import CvFpsCalc
 from model import KeyPointClassifier
 from model import PointHistoryClassifier
+
+NEUTRAL_ID = 0
+TILT_ID = 1
+PINCH_ID = 2
+CLAW_ID = 3
 
 
 def get_args():
@@ -97,6 +103,8 @@ def main():
 
     #  ########################################################################
     mode = 0
+    prev_hand_id = 0
+    num_waves = 0
 
     while True:
         fps = cvFpsCalc.get()
@@ -141,11 +149,28 @@ def main():
 
                 # Hand sign classification
                 hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
-                if hand_sign_id == 2:  # Point gesture
-                    point_history.append(landmark_list[8])
-                else:
-                    point_history.append([0, 0])
 
+                # when gesture goes from 0 -> 1, capture as wave
+                if (prev_hand_id == NEUTRAL_ID and hand_sign_id == TILT_ID):
+                    num_waves += 1
+                    print("Number of waves:", num_waves)
+
+                elif (hand_sign_id == PINCH_ID):
+                    thumb_tip = landmark_list[4]
+                    index_tip = landmark_list[8]
+                    euc_dist = ((thumb_tip[0] - index_tip[0]) ** 2 + (thumb_tip[1] - index_tip[1]) ** 2) ** 0.5
+                    print("Distance between thumb tip and index tip:", euc_dist)    
+                
+                elif (hand_sign_id == CLAW_ID):
+                    thumb_tip = landmark_list[4]
+                    index_tip = landmark_list[8]
+                    angle = math.atan2(thumb_tip[1] - index_tip[1], thumb_tip[0] - index_tip[0]) * 180 / math.pi
+                    print("Angle between thumb tip and index tip:", angle)   
+
+                prev_hand_id = hand_sign_id
+
+
+                # TODO: look into finger gestures for more possibilities
                 # Finger gesture classification
                 finger_gesture_id = 0
                 point_history_len = len(pre_processed_point_history_list)
