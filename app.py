@@ -11,6 +11,8 @@ import cv2 as cv
 import numpy as np
 import mediapipe as mp
 import math
+import pyautogui
+import autopy
 
 from utils import CvFpsCalc
 from model import KeyPointClassifier
@@ -20,7 +22,8 @@ NEUTRAL_ID = 0
 TILT_ID = 1
 PINCH_ID = 2
 CLAW_ID = 3
-
+CURSOR_MODE_ID = 4
+CURSOR_MODE_CLICK_ID = 5
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -152,6 +155,7 @@ def main():
 
                 # when gesture goes from 0 -> 1, capture as wave
                 if (prev_hand_id == NEUTRAL_ID and hand_sign_id == TILT_ID):
+                    pyautogui.click()
                     num_waves += 1
                     print("Number of waves:", num_waves)
 
@@ -165,7 +169,32 @@ def main():
                     thumb_tip = landmark_list[4]
                     index_tip = landmark_list[8]
                     angle = math.atan2(thumb_tip[1] - index_tip[1], thumb_tip[0] - index_tip[0]) * 180 / math.pi
-                    print("Angle between thumb tip and index tip:", angle)   
+                    print("Angle between thumb tip and index tip:", angle)
+
+                # cursor mode
+                elif (hand_sign_id == CURSOR_MODE_ID):
+                    # index tip coords
+                    x1, y1 = landmark_list[8]
+
+                    w, h = autopy.screen.size()
+                    X = int(np.interp(x1, [110, 620], [0, w - 1]))
+                    Y = int(np.interp(y1, [20, 350], [0, h - 1]))
+                    # cv2.circle(img, (lmList[8][1], lmList[8][2]), 7, (255, 255, 255), cv2.FILLED)
+                    # cv2.circle(img, (lmList[4][1], lmList[4][2]), 10, (0, 255, 0), cv2.FILLED)  #thumb
+
+                    if X%2 !=0:
+                        X = X - X%2
+                    if Y%2 !=0:
+                        Y = Y - Y%2
+                    # print(X,Y)
+                    autopy.mouse.move(X,Y)
+                    # print("Index:", index_tip_coords)
+                    
+
+                elif (hand_sign_id == CURSOR_MODE_CLICK_ID and prev_hand_id == CURSOR_MODE_ID):
+                    pyautogui.click()
+
+
 
                 prev_hand_id = hand_sign_id
 
