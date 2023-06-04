@@ -13,6 +13,7 @@ import mediapipe as mp
 import math
 import pyautogui
 import autopy
+import time
 
 from utils import CvFpsCalc
 from model import KeyPointClassifier
@@ -24,6 +25,14 @@ PINCH_ID = 2
 CLAW_ID = 3
 CURSOR_MODE_ID = 4
 CURSOR_MODE_CLICK_ID = 5
+SCROLL_MODE_ID = 6
+FIST_ID = 7
+OK_ID = 8
+
+origin_x = 0
+origin_y = 0
+default_w = 960
+default_h = 540
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -108,6 +117,17 @@ def main():
     mode = 0
     prev_hand_id = 0
     num_waves = 0
+    y_prev = 0
+    x_prev = 0
+    origin_x = 0
+    origin_y = 0
+    scroll_multiplier = 5
+    w, h = autopy.screen.size()
+    toggle1 = False
+    toggle2 = True
+    cursor_mode = False
+    toggle_mute = True
+    start_x = 0
 
     while True:
         fps = cvFpsCalc.get()
@@ -153,6 +173,11 @@ def main():
                 # Hand sign classification
                 hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
 
+                if (prev_hand_id == FIST_ID and hand_sign_id != FIST_ID):
+                    print("Resetting toggles")
+                    toggle1 = True
+                    toggle2 = False
+
                 # when gesture goes from 0 -> 1, capture as wave
                 if (prev_hand_id == NEUTRAL_ID and hand_sign_id == TILT_ID):
                     pyautogui.click()
@@ -172,30 +197,95 @@ def main():
                     print("Angle between thumb tip and index tip:", angle)
 
                 # cursor mode
-                elif (hand_sign_id == CURSOR_MODE_ID):
-                    # index tip coords
-                    x1, y1 = landmark_list[8]
+                elif (hand_sign_id == 69):
 
-                    w, h = autopy.screen.size()
-                    X = int(np.interp(x1, [110, 620], [0, w - 1]))
-                    Y = int(np.interp(y1, [20, 350], [0, h - 1]))
+                    if (cursor_mode):
+                        # mode 1 
+                        cur_x = pyautogui.position().x
+                        cur_y = pyautogui.position().y
+                        # print("cur_x", cur_x, "cur_y", cur_y)
+                        x1, y1 = landmark_list[8]
+                        # print(x1, y1)
+
+                        x_bound_low = 0
+                        x_bound_high = default_w
+                        y_bound_low = 0
+                        y_bound_high = default_h
+                        sens_x = 50
+                        sens_y = 30
+                        # position of finger is origin
+                        if (prev_hand_id != CURSOR_MODE_ID):
+                            origin_x = int(np.interp(x1, [x_bound_low, x_bound_high - 1], [0, w - 1]))
+                            origin_y = int(np.interp(y1, [y_bound_low, y_bound_high  - 1], [0, h - 1]))
+                        else:
+                            new_x = int(np.interp(x1, [x_bound_low, x_bound_high - 1], [0, w - 1]))
+                            new_y = int(np.interp(y1, [y_bound_low, y_bound_high - 1], [0, h - 1]))
+                            rel_x = new_x - origin_x if abs(new_x - origin_x) > sens_x else 0
+                            rel_y = new_y - origin_y if abs(new_y - origin_y) > sens_y else 0
+                            print("x", rel_x, "y", rel_y)
+                            autopy.mouse.move(cur_x + rel_x // 5, cur_y + rel_y // 5)
+
+                    
+                    else:
+                        # mode 2
+                        x1, y1 = landmark_list[8]
+                        X = int(np.interp(x1, [110, 620], [0, w - 1]))
+                        Y = int(np.interp(y1, [20, 350], [0, h - 1]))
+                        # print("current cursor:", cur_x, cur_y)
+                        
+                        if X%2 !=0:
+                            X = X - X%2
+                        if Y%2 !=0:
+                            Y = Y - Y%2
+                        autopy.mouse.move(X, Y)
+
+                    # currently:
+                    # moves the cursor to location of finger
+                    # we want to move based on previous
+                    # calculate x and y for every frame
+
                     # cv2.circle(img, (lmList[8][1], lmList[8][2]), 7, (255, 255, 255), cv2.FILLED)
                     # cv2.circle(img, (lmList[4][1], lmList[4][2]), 10, (0, 255, 0), cv2.FILLED)  #thumb
 
-                    if X%2 !=0:
-                        X = X - X%2
-                    if Y%2 !=0:
-                        Y = Y - Y%2
-                    # print(X,Y)
-                    autopy.mouse.move(X,Y)
+                    # movement = prev - current? 
+
+                    # # print(X,Y)
+                    # autopy.mouse.move(X,Y)
                     # print("Index:", index_tip_coords)
                     
 
                 elif (hand_sign_id == CURSOR_MODE_CLICK_ID and prev_hand_id == CURSOR_MODE_ID):
                     pyautogui.click()
 
+                elif (hand_sign_id == SCROLL_MODE_ID):
+                    # if user uses the scroll gesture for the first time
+                    #   mark the starting spot
+                    #   scroll based on (y_current - y_start); going to use y coord of index finger
+                    y_cur = landmark_list[8][1]
+                    scroll_diff = (y_prev - y_cur) * scroll_multiplier
+                    pyautogui.scroll(scroll_diff)
 
+                elif (hand_sign_id == FIST_ID):
+                    if (toggle1 != toggle2):
+                        start_time = time.time()
+                        toggle1 = toggle2
+                    if (time.time() - start_time > 3):
+                        cursor_mode = not cursor_mode
+                        print("cursor_mode is now: " + str(cursor_mode))
+                        toggle1 = not toggle2
 
+                elif (hand_sign_id == OK_ID):
+                    if (prev_hand_id != OK_ID):
+                        start_x = landmark_list[8][0]
+                        toggle_mute = True
+                    else:
+                        end_x = landmark_list[8][0]
+                        if (abs(end_x - start_x) > 150 and toggle_mute):
+                            print("sheesh")
+                            pyautogui.press('volumemute') 
+                            toggle_mute = False
+
+                x_prev, y_prev = landmark_list[8]
                 prev_hand_id = hand_sign_id
 
 
